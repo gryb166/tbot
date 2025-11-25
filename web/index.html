@@ -1,0 +1,204 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Trading Stats Dashboard</title>
+
+  <!-- Bootstrap -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+
+  <!-- DataTables -->
+  <link href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css" rel="stylesheet">
+
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; background: #f7f7f7; }
+    .card { background: white; padding: 16px; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.08); margin-bottom: 16px; }
+    canvas { max-width: 100%; }
+
+    .side-long { color: #0b8f38 !important; font-weight: bold; }
+    .side-short { color: #c00000 !important; font-weight: bold; }
+
+    .row-win { background-color: #d9f7d9 !important; }
+    .row-loss { background-color: #ffd6d6 !important; }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <h2 class="mb-4">📈 Trade Statistics Dashboard</h2>
+
+    <!-- SUMMARY BLOCK -->
+    <div class="row" id="summaryBlock">
+      <div class="col-md-2">
+        <div class="card text-center">
+          <h6>Total Trades</h6>
+          <h3 id="sumTrades">0</h3>
+        </div>
+      </div>
+      <div class="col-md-2">
+        <div class="card text-center">
+          <h6>Winrate</h6>
+          <h3 id="sumWinrate">0%</h3>
+        </div>
+      </div>
+      <div class="col-md-2">
+        <div class="card text-center">
+          <h6>Avg PnL</h6>
+          <h3 id="sumAvgPNL">0%</h3>
+        </div>
+      </div>
+      <div class="col-md-2">
+        <div class="card text-center">
+          <h6>Total PnL</h6>
+          <h3 id="sumTotalPNL">0%</h3>
+        </div>
+      </div>
+      <div class="col-md-2">
+        <div class="card text-center">
+          <h6>Max Drawdown</h6>
+          <h3 id="sumMaxDD">0%</h3>
+        </div>
+      </div>
+    </div>
+
+    <!-- Chart -->
+    <div class="card mb-4">
+      <canvas id="chart" width="900" height="300"></canvas>
+    </div>
+
+    <!-- Trades Table -->
+    <div class="card">
+      <h3>Recent Trades</h3>
+      <table id="tradesTable" class="table table-striped table-bordered" style="width:100%"></table>
+    </div>
+  </div>
+
+  <!-- JS LIBS -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+  <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+  <script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
+
+  <script>
+    async function loadTrades() {
+      const res = await fetch("http://localhost:8000/trades");
+      const data = await res.json();
+      return data.reverse();
+    }
+
+    function calcSummary(trades) {
+      const count = trades.length;
+      const wins = trades.filter(t => t.result === "WIN").length;
+      const winrate = count > 0 ? (wins / count * 100).toFixed(1) : 0;
+
+      const pnls = trades.map(t => t.change_pct * 100);
+      const avgPNL = pnls.reduce((a,b)=>a+b,0) / count;
+      const totalPNL = pnls.reduce((a,b)=>a+b,0);
+
+      // max drawdown on cumulative pnl curve
+      let equity = 0;
+      let maxEquity = 0;
+      let maxDD = 0;
+
+      for (let p of pnls) {
+        equity += p;
+        if (equity > maxEquity) maxEquity = equity;
+        let dd = maxEquity - equity;
+        if (dd > maxDD) maxDD = dd;
+      }
+
+      document.getElementById("sumTrades").innerText = count;
+      document.getElementById("sumWinrate").innerText = winrate + "%";
+      document.getElementById("sumAvgPNL").innerText = avgPNL.toFixed(2) + "%";
+      document.getElementById("sumTotalPNL").innerText = totalPNL.toFixed(2) + "%";
+      document.getElementById("sumMaxDD").innerText = maxDD.toFixed(2) + "%";
+    }
+
+    function renderTable(trades) {
+      const table = $('#tradesTable');
+      table.empty();
+
+      table.append(`
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Side</th>
+            <th>Result</th>
+            <th>Entry</th>
+            <th>Exit</th>
+            <th>% Change</th>
+            <th>Time (UTC)</th>
+          </tr>
+        </thead>
+      `);
+
+      const tbody = $("<tbody></tbody>");
+
+      trades.forEach(t => {
+        tbody.append(`
+          <tr data-side="${t.side}" data-result="${t.result}">
+            <td>${t.id}</td>
+            <td>${t.side}</td>
+            <td>${t.result}</td>
+            <td>${t.entry_price}</td>
+            <td>${t.exit_price}</td>
+            <td>${(t.change_pct * 100).toFixed(2)}%</td>
+            <td>${t.time}</td>
+          </tr>
+        `);
+      });
+
+      table.append(tbody);
+
+      table.DataTable({
+        destroy: true,
+        order: [[0, "desc"]],
+        pageLength: 100,
+        lengthMenu: [[100, 200, 500, -1], [100, 200, 500, "All"]],
+        createdRow: function(row) {
+          const side = $(row).attr("data-side");
+          if (side === "LONG") $(row).find("td:eq(1)").addClass("side-long");
+          else $(row).find("td:eq(1)").addClass("side-short");
+
+          const result = $(row).attr("data-result");
+          if (result === "WIN") $(row).addClass("row-win");
+          else $(row).addClass("row-loss");
+        }
+      });
+    }
+
+    async function draw() {
+      const trades = await loadTrades();
+
+      calcSummary(trades);
+      renderTable(trades);
+
+      const labels = trades.map(t => new Date(t.time).toLocaleString());
+      const data = trades.map(t => t.change_pct * 100);
+
+      const ctx = document.getElementById("chart").getContext("2d");
+      new Chart(ctx, {
+        type: "line",
+        data: {
+          labels: labels,
+          datasets: [{
+            label: "Profit % per trade",
+            data: data,
+            fill: false,
+            borderColor: "rgba(75,192,192,1)",
+            tension: 0.2
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: { legend: { display: true } },
+          scales: { y: { beginAtZero: false } }
+        }
+      });
+    }
+
+    draw();
+  </script>
+
+</body>
+</html>
