@@ -10,8 +10,8 @@ from db import init_db, save_trade, DB_PATH
 # ------------------------------
 # API Keys (для тесту можна залишити пусті рядки)
 # ------------------------------
-API_KEY = "ckcJydDtUhYrlJguEFlXv2zvFP6eN65OsdS7iTFQ7frO0xYbp6rO9RaaUjUlpRMU";
-API_SECRET = "dAGw7Kl44tOTHdD6ByNwe4hpIBReo55ddG0ZRQRV9VXJjicKTQQ53216nt0WOsNQ";
+API_KEY = "";
+API_SECRET = "";
 
 # ------------------------------
 # Аргументи командного рядка
